@@ -1,252 +1,190 @@
-import React, { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import React, { useState, useEffect } from 'react';
 
-// Ukuran papan
-const BOARD_SIZE = 8;
-
-// Setup awal catur standar
-const initialBoard = Array(BOARD_SIZE)
-  .fill(null)
-  .map(() => Array(BOARD_SIZE).fill(null));
-
-// Bidak untuk player 1 (bawah)
-initialBoard[7] = [
-  { player: 1, type: "R" },
-  { player: 1, type: "N" },
-  { player: 1, type: "B" },
-  { player: 1, type: "Q" },
-  { player: 1, type: "K" },
-  { player: 1, type: "B" },
-  { player: 1, type: "N" },
-  { player: 1, type: "R" },
+const initialBoard = [
+  ['R','N','B','Q','K','B','N','R'],
+  ['P','P','P','P','P','P','P','P'],
+  [null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null],
+  ['P','P','P','P','P','P','P','P'],
+  ['R','N','B','Q','K','B','N','R']
 ];
-for (let i = 0; i < BOARD_SIZE; i++) initialBoard[6][i] = { player: 1, type: "P" };
 
-// Bidak untuk player 2 (atas)
-initialBoard[0] = [
-  { player: 2, type: "R" },
-  { player: 2, type: "N" },
-  { player: 2, type: "B" },
-  { player: 2, type: "Q" },
-  { player: 2, type: "K" },
-  { player: 2, type: "B" },
-  { player: 2, type: "N" },
-  { player: 2, type: "R" },
-];
-for (let i = 0; i < BOARD_SIZE; i++) initialBoard[1][i] = { player: 2, type: "P" };
-
-// Harga shop
-const shopPrices = {
-  P: 5,
-  N: 10,
-  B: 10,
-  R: 15,
-  Q: 20,
+const pieceIcons = {
+  'P': '♙', 'R': '♖', 'N': '♘', 'B': '♗', 'Q': '♕', 'K': '♔'
 };
 
-// Simbol bidak catur seragam
-const pieceSymbols = {
-  P: "♙",
-  R: "♖",
-  N: "♘",
-  B: "♗",
-  Q: "♕",
-  K: "♔",
-};
+const pieceCosts = { 'P': 5, 'R': 20, 'N': 20, 'B': 20, 'Q': 50, 'K': 100 };
+const cellSize = 60;
 
-// Validasi gerakan sesuai aturan dasar catur
-function isValidMove(piece, fromRow, fromCol, toRow, toCol, board) {
-  if (!piece) return false;
-  const dr = toRow - fromRow;
-  const dc = toCol - fromCol;
-  const absDr = Math.abs(dr);
-  const absDc = Math.abs(dc);
-
-  const target = board[toRow][toCol];
-  if (target && target.player === piece.player) return false;
-
-  switch (piece.type) {
-    case "P": {
-      const dir = piece.player === 1 ? -1 : 1;
-      const startRow = piece.player === 1 ? 6 : 1;
-      if (dc === 0 && dr === dir && !target) return true;
-      if (dc === 0 && dr === 2 * dir && fromRow === startRow && !target && !board[fromRow + dir][fromCol]) return true;
-      if (absDc === 1 && dr === dir && target) return true;
-      return false;
-    }
-    case "R": {
-      if (dr !== 0 && dc !== 0) return false;
-      const stepR = dr === 0 ? 0 : dr / absDr;
-      const stepC = dc === 0 ? 0 : dc / absDc;
-      let r = fromRow + stepR;
-      let c = fromCol + stepC;
-      while (r !== toRow || c !== toCol) {
-        if (board[r][c]) return false;
-        r += stepR;
-        c += stepC;
-      }
-      return true;
-    }
-    case "N": {
-      return (absDr === 2 && absDc === 1) || (absDr === 1 && absDc === 2);
-    }
-    case "B": {
-      if (absDr !== absDc) return false;
-      const stepR = dr / absDr;
-      const stepC = dc / absDc;
-      let r = fromRow + stepR;
-      let c = fromCol + stepC;
-      while (r !== toRow || c !== toCol) {
-        if (board[r][c]) return false;
-        r += stepR;
-        c += stepC;
-      }
-      return true;
-    }
-    case "Q": {
-      if (dr === 0 || dc === 0) {
-        return isValidMove({ ...piece, type: "R" }, fromRow, fromCol, toRow, toCol, board);
-      } else if (absDr === absDc) {
-        return isValidMove({ ...piece, type: "B" }, fromRow, fromCol, toRow, toCol, board);
-      }
-      return false;
-    }
-    case "K": {
-      return absDr <= 1 && absDc <= 1;
-    }
-    default:
-      return false;
-  }
-}
-
-export default function ChessEconomy() {
+export default function Chess() {
   const [board, setBoard] = useState(initialBoard);
   const [selected, setSelected] = useState(null);
-  const [coins, setCoins] = useState({ 1: 0, 2: 0 });
-  const [turn, setTurn] = useState(1);
-  const [territory, setTerritory] = useState(Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null)));
+  const [tileOwners, setTileOwners] = useState(Array(8).fill(null).map(() => Array(8).fill(null)));
+  const [turn, setTurn] = useState('player1');
+  const [coins, setCoins] = useState({ player1: 0, player2: 0 });
 
-  // Tandai wilayah awal berdasarkan bidak awal
   useEffect(() => {
-    const newTerritory = territory.map((r) => [...r]);
-    for (let r = 0; r < BOARD_SIZE; r++) {
-      for (let c = 0; c < BOARD_SIZE; c++) {
-        if (board[r][c]) {
-          newTerritory[r][c] = board[r][c].player;
-        }
+    const initialOwners = tileOwners.map(r => [...r]);
+    for (let row = 0; row < 2; row++) {
+      for (let col = 0; col < 8; col++) {
+        if (board[row][col]) initialOwners[row][col] = 'player1';
       }
     }
-    setTerritory(newTerritory);
+    for (let row = 6; row < 8; row++) {
+      for (let col = 0; col < 8; col++) {
+        if (board[row][col]) initialOwners[row][col] = 'player2';
+      }
+    }
+    setTileOwners(initialOwners);
   }, []);
 
-  const handleCellClick = (row, col) => {
-    const piece = board[row][col];
+  useEffect(() => {
+    const countPlayer1 = tileOwners.flat().filter(owner => owner === 'player1').length;
+    const countPlayer2 = tileOwners.flat().filter(owner => owner === 'player2').length;
 
-    if (selected) {
-      const [selRow, selCol] = selected;
-      const movingPiece = board[selRow][selCol];
+    setCoins(prev => ({
+      player1: prev.player1 + countPlayer1,
+      player2: prev.player2 + countPlayer2
+    }));
+  }, [turn]);
 
-      if (
-        movingPiece &&
-        movingPiece.player === turn &&
-        (row !== selRow || col !== selCol)
-      ) {
-        if (isValidMove(movingPiece, selRow, selCol, row, col, board)) {
-          const newBoard = board.map((r) => [...r]);
-          newBoard[row][col] = movingPiece;
-          newBoard[selRow][selCol] = null;
-          setBoard(newBoard);
+  const isValidMove = (piece, fromRow, fromCol, toRow, toCol) => {
+    const target = board[toRow][toCol];
+    const isWhite = fromRow < 4;
+    if ((turn === 'player1' && !isWhite) || (turn === 'player2' && isWhite)) return false;
+    if (target && ((isWhite && target === target.toUpperCase()) || (!isWhite && target !== target.toUpperCase()))) return false;
 
-          // Kuasai wilayah
-          const newTerritory = territory.map((r) => [...r]);
-          newTerritory[row][col] = turn;
-          setTerritory(newTerritory);
+    const dr = toRow - fromRow;
+    const dc = toCol - fromCol;
 
-          // Hitung coin per wilayah yang dikuasai setelah giliran
-          const count1 = newTerritory.flat().filter((t) => t === 1).length;
-          const count2 = newTerritory.flat().filter((t) => t === 2).length;
-          setCoins((prev) => ({
-            1: prev[1] + count1,
-            2: prev[2] + count2,
-          }));
-
-          setTurn(turn === 1 ? 2 : 1);
+    switch(piece.toUpperCase()) {
+      case 'P':
+        const dir = isWhite ? 1 : -1;
+        if (dc === 0 && !target && dr === dir) return true;
+        if (dc === 0 && !target && dr === 2*dir && ((isWhite && fromRow === 1) || (!isWhite && fromRow === 6)) && !board[fromRow + dir][fromCol]) return true;
+        if (Math.abs(dc) === 1 && dr === dir && target) return true;
+        return false;
+      case 'R':
+        if (dr === 0 || dc === 0) {
+          const stepR = dr === 0 ? 0 : dr/Math.abs(dr);
+          const stepC = dc === 0 ? 0 : dc/Math.abs(dc);
+          let r = fromRow + stepR, c = fromCol + stepC;
+          while (r !== toRow || c !== toCol) {
+            if (board[r][c]) return false;
+            r += stepR; c += stepC;
+          }
+          return true;
         }
-      }
-      setSelected(null);
-    } else {
-      if (piece && piece.player === turn) {
-        setSelected([row, col]);
-      }
+        return false;
+      case 'N':
+        return (Math.abs(dr) === 2 && Math.abs(dc) === 1) || (Math.abs(dr) === 1 && Math.abs(dc) === 2);
+      case 'B':
+        if (Math.abs(dr) === Math.abs(dc)) {
+          const stepR = dr/Math.abs(dr);
+          const stepC = dc/Math.abs(dc);
+          let r = fromRow + stepR, c = fromCol + stepC;
+          while (r !== toRow && c !== toCol) {
+            if (board[r][c]) return false;
+            r += stepR; c += stepC;
+          }
+          return true;
+        }
+        return false;
+      case 'Q':
+        if (dr === 0 || dc === 0 || Math.abs(dr) === Math.abs(dc)) {
+          const stepR = dr === 0 ? 0 : dr/Math.abs(dr);
+          const stepC = dc === 0 ? 0 : dc/Math.abs(dc);
+          let r = fromRow + stepR, c = fromCol + stepC;
+          while (r !== toRow || c !== toCol) {
+            if (board[r][c]) return false;
+            r += stepR; c += stepC;
+          }
+          return true;
+        }
+        return false;
+      case 'K':
+        return Math.abs(dr) <= 1 && Math.abs(dc) <= 1;
+      default:
+        return false;
     }
   };
 
-  const buyPiece = (player, type) => {
-    if (coins[player] >= shopPrices[type]) {
-      const newBoard = board.map((r) => [...r]);
-      const baseRow = player === 1 ? 7 : 0;
-      const emptyCol = newBoard[baseRow].findIndex((cell) => cell === null);
-      if (emptyCol !== -1) {
-        newBoard[baseRow][emptyCol] = { player, type };
+  const handleCellClick = (row, col) => {
+    if (selected) {
+      const piece = board[selected.row][selected.col];
+      if (isValidMove(piece, selected.row, selected.col, row, col)) {
+        const newBoard = board.map(r => [...r]);
+        newBoard[row][col] = piece;
+        newBoard[selected.row][selected.col] = null;
         setBoard(newBoard);
-        setCoins({ ...coins, [player]: coins[player] - shopPrices[type] });
+
+        const newOwners = tileOwners.map(r => [...r]);
+        newOwners[row][col] = turn;
+        setTileOwners(newOwners);
+
+        setTurn(turn === 'player1' ? 'player2' : 'player1');
       }
+      setSelected(null);
+    } else if (board[row][col]) {
+      setSelected({ row, col });
     }
+  };
+
+  const handleBuyPiece = (pieceType) => {
+    if (coins[turn] < pieceCosts[pieceType]) return;
+    const spawnRows = turn === 'player1' ? [0,1] : [6,7];
+    const emptyCells = [];
+    spawnRows.forEach(row=>{
+      board[row].forEach((cell,col)=>{
+        if(!cell) emptyCells.push([row,col]);
+      });
+    });
+    if(emptyCells.length===0) return;
+    const [r,c] = emptyCells[Math.floor(Math.random()*emptyCells.length)];
+    const newBoard = board.map(r=>[...r]);
+    newBoard[r][c] = pieceType;
+    setBoard(newBoard);
+
+    const newOwners = tileOwners.map(r=>[...r]);
+    newOwners[r][c] = turn;
+    setTileOwners(newOwners);
+
+    setCoins(prev=>({...prev,[turn]: prev[turn]-pieceCosts[pieceType]}));
+  };
+
+  const boardStyle = { display: 'inline-block', border: '2px solid #333', marginBottom: 20, backgroundColor: '#ffffff' };
+  const rowStyle = { display: 'flex' };
+  const cellStyle = (row, col, isSelected) => {
+    const owner = tileOwners[row][col];
+    let bgColor = (row + col) % 2 === 0 ? '#f0d9b5' : '#b58863';
+    if (owner === 'player1') bgColor = '#4da6ff';
+    if (owner === 'player2') bgColor = '#ff4d4d';
+    return { width: cellSize, height: cellSize, display:'flex',justifyContent:'center',alignItems:'center',fontSize:40,cursor:'pointer',backgroundColor:bgColor,outline:isSelected?'3px solid yellow':'none'};
   };
 
   return (
-    <div className="flex flex-col items-center p-4 gap-4">
-      <h1 className="text-2xl font-bold">Chess Economy Game</h1>
-      <div className="grid grid-cols-8 border-2">
-        {board.map((row, rIdx) =>
-          row.map((cell, cIdx) => (
-            <div
-              key={`${rIdx}-${cIdx}`}
-              onClick={() => handleCellClick(rIdx, cIdx)}
-              className={`w-12 h-12 flex items-center justify-center cursor-pointer text-2xl border
-                ${(rIdx + cIdx) % 2 === 0 ? "bg-gray-200" : "bg-green-600"}
-                ${territory[rIdx][cIdx] === 1 ? "bg-blue-300" : ""}
-                ${territory[rIdx][cIdx] === 2 ? "bg-red-300" : ""}
-                ${selected && selected[0] === rIdx && selected[1] === cIdx ? "ring-4 ring-yellow-400" : ""}
-              `}
-            >
-              {cell ? (
-                <span className={cell.player === 1 ? "text-blue-600" : "text-red-600"}>
-                  {pieceSymbols[cell.type]}
-                </span>
-              ) : null}
-            </div>
-          ))
+    <div style={{backgroundColor:'#ffffff', padding:10}}>
+      <div style={{marginBottom:10}}>
+        <strong>Player 1 Coins:</strong> {coins.player1} | <strong>Player 2 Coins:</strong> {coins.player2}
+      </div>
+      <div style={{marginBottom:10}}>
+        {['P','R','N','B','Q','K'].map(p=>
+          <button key={p} onClick={()=>handleBuyPiece(p)} style={{marginRight:5}}>{pieceIcons[p]} {pieceCosts[p]}</button>
         )}
       </div>
-
-      <div className="flex gap-6">
-        {[1, 2].map((p) => (
-          <Card key={p} className="p-2 w-52">
-            <CardContent className="flex flex-col items-center gap-2">
-              <p className="font-bold">Player {p}</p>
-              <p>Coins: {coins[p]}</p>
-              <div className="flex flex-wrap gap-2 justify-center">
-                {Object.keys(shopPrices).map((t) => (
-                  <Button
-                    key={t}
-                    onClick={() => buyPiece(p, t)}
-                    disabled={coins[p] < shopPrices[t]}
-                  >
-                    <span className={p === 1 ? "text-blue-600" : "text-red-600"}>
-                      {pieceSymbols[t]}
-                    </span>
-                    {` (${shopPrices[t]}c)`}
-                  </Button>
-                ))}
+      <div style={boardStyle}>
+        {board.map((rowData,row)=>(
+          <div key={row} style={rowStyle}>
+            {rowData.map((piece,col)=>(
+              <div key={col} style={cellStyle(row,col,selected&&selected.row===row&&selected.col===col)} onClick={()=>handleCellClick(row,col)}>
+                {piece && <span>{pieceIcons[piece.toUpperCase()]}</span>}
               </div>
-            </CardContent>
-          </Card>
+            ))}
+          </div>
         ))}
       </div>
-
-      <p className="mt-2">Giliran: Player {turn}</p>
     </div>
   );
 }
